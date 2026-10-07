@@ -1,0 +1,45 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "eve-mcp"
+version = "0.1.0"
+description = "Standalone, read-only multi-character EVE Online MCP server"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+authors = [{name = "eve-mcp contributors"}]
+dependencies = [
+  "fastmcp>=2.0,<3",
+  "httpx>=0.27",
+  "pydantic>=2.0",
+  "typer>=0.12",
+]
+
+[project.optional-dependencies]
+dev = ["mypy>=1.10", "pytest>=8", "pytest-asyncio>=0.23", "ruff>=0.6"]
+keyring = ["keyring>=25"]
+
+[project.scripts]
+eve-mcp = "eve_mcp.cli:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+files = ["src"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/eve_mcp"]

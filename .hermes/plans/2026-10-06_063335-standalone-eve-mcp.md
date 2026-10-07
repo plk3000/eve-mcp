@@ -55,7 +55,6 @@ It exposes out-of-game ESI data. It is not a dashboard, game launcher, bot, over
 Before the first real authorization, use the official [EVE API Explorer](https://developers.eveonline.com/api-explorer) and current CCP SSO documentation to verify the exact endpoint/scope contract. Then show the scope list to the operator for approval:
 
 ```text
-openid
 esi-skills.read_skills.v1
 esi-skills.read_skillqueue.v1
 esi-assets.read_assets.v1

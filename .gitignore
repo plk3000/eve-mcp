@@ -1,0 +1,13 @@
+# Python
+.venv/
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+
+# Local EVE MCP state and explicit secret fallback
+*.sqlite
+*.db
+.env
+config/local-secrets*
