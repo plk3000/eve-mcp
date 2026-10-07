@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from typing import Annotated
 
+import httpx
 import typer
 
 from eve_mcp.auth.pkce import SCOPES
@@ -12,10 +14,13 @@ from eve_mcp.auth.sso import SsoClient, SsoWorkflow
 from eve_mcp.auth.token_store import KeyringTokenStore
 from eve_mcp.config import Settings
 from eve_mcp.profiles import ProfileRepository
+from eve_mcp.static_data.refresh import StaticDataManager, StaticDataSourceUnavailable
 
-app = typer.Typer(help="Read-only, standalone EVE Online MCP server.")
+app = typer.Typer(help="Standalone EVE Online MCP server with create-only fitting support.")
 auth_app = typer.Typer(help="Manage independently authorized EVE characters.")
+static_data_app = typer.Typer(help="Inspect and manage the local static-data cache.")
 app.add_typer(auth_app, name="auth")
+app.add_typer(static_data_app, name="static-data")
 
 
 def _repository() -> ProfileRepository:
@@ -25,6 +30,73 @@ def _repository() -> ProfileRepository:
 
 def _scope_text() -> str:
     return "\n".join(f"  {scope}" for scope in SCOPES)
+
+
+def _static_data() -> StaticDataManager:
+    return StaticDataManager(Settings.from_environment().data_dir)
+
+
+@static_data_app.command("status")
+def static_data_status() -> None:
+    """Report local catalogs without contacting a network service."""
+    typer.echo(json.dumps(_static_data().status(), indent=2, sort_keys=True))
+
+
+@static_data_app.command("refresh")
+def static_data_refresh(
+    force: Annotated[bool, typer.Option("--force", help="Replace the installed build.")] = False,
+) -> None:
+    """Fetch and validate the current official CCP SDE archive."""
+    try:
+        result = _static_data().refresh_official(force=force)
+        typer.echo(json.dumps(result, sort_keys=True))
+    except (
+        StaticDataSourceUnavailable,
+        httpx.HTTPError,
+        OSError,
+        RuntimeError,
+        ValueError,
+    ) as error:
+        typer.echo(str(error), err=True)
+        raise typer.Exit(2) from error
+
+
+@static_data_app.command("clear")
+def static_data_clear(
+    build: Annotated[str | None, typer.Option("--build", help="Exact build ID to clear.")] = None,
+    all_builds: Annotated[bool, typer.Option("--all", help="Clear all local static data.")] = False,
+    yes: Annotated[
+        bool,
+        typer.Option(
+            "--yes",
+            help="Confirm deletion; clearing the active build disables fitting until refreshed.",
+        ),
+    ] = False,
+) -> None:
+    """Clear only static-data cache/catalog paths."""
+    if (build is None) == (not all_builds):
+        typer.echo("Specify exactly one of --build or --all.", err=True)
+        raise typer.Exit(2)
+    manager = _static_data()
+    if all_builds and yes:
+        paths = (manager.root, manager.cache_root)
+        total_bytes = sum(manager._bytes(path) for path in paths)
+        typer.echo(f"Clearing {total_bytes} bytes from: " + ", ".join(str(path) for path in paths))
+    if build and yes:
+        current = manager._current()
+        if current and current.get("build_id") == build:
+            typer.echo(
+                "Warning: fitting drafting and saving will be unavailable until another "
+                "catalog is refreshed."
+            )
+    try:
+        result = (
+            manager.clear_all(yes=yes) if all_builds else manager.clear_build(build or "", yes=yes)
+        )
+    except ValueError as error:
+        typer.echo(str(error), err=True)
+        raise typer.Exit(2) from error
+    typer.echo(json.dumps(result, indent=2, sort_keys=True))
 
 
 @app.command()
@@ -39,7 +111,7 @@ def serve() -> None:
 def auth_add() -> None:
     """Start an operator-approved, loopback-only PKCE authorization flow."""
     settings = Settings.from_environment()
-    typer.echo("The following exact read-only scopes will be requested:")
+    typer.echo("The following exact character scopes will be requested:")
     typer.echo(_scope_text())
     try:
         client_id, redirect_uri = settings.require_sso_configuration()

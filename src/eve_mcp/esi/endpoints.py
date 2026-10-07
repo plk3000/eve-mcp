@@ -1,4 +1,4 @@
-"""Normalized read-only selected-v1 ESI endpoint adapters."""
+"""Normalized explicit-character ESI endpoint adapters."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ class AccessTokenProvider(Protocol):
 
 
 class EsiCharacterEndpoints:
-    """Production adapter for the selected, authenticated read-only ESI routes."""
+    """Production adapter for selected, authenticated ESI routes."""
 
     def __init__(self, client: EsiClient, tokens: AccessTokenProvider) -> None:
         self.client = client
@@ -32,6 +32,35 @@ class EsiCharacterEndpoints:
         return self._envelope(
             character_id, await self._get(character_id, f"characters/{character_id}/skills/")
         )
+
+    async def fittings(
+        self, character_id: str, limit: int = 100, fresh: bool = False
+    ) -> dict[str, Any]:
+        if limit < 1:
+            raise ValueError("limit must be at least 1")
+        response = await self._get(
+            character_id,
+            f"characters/{character_id}/fittings/",
+            fresh=fresh,
+            bearer_auth=True,
+        )
+        items = self._items(response.payload)
+        bounded = items[:limit]
+        result = self._envelope(character_id, EsiResponse(bounded, response.expires_at, None))
+        result["total_available"] = len(items) if len(items) <= limit else None
+        result["truncated"] = len(items) > len(bounded)
+        return result
+
+    async def create_fitting(self, character_id: str, fitting: dict[str, Any]) -> Any:
+        path = f"characters/{character_id}/fittings/"
+        try:
+            return await self.client.post_fitting(
+                character_id,
+                fitting,
+                await self.tokens.get_access_token(character_id),
+            )
+        finally:
+            self.client.invalidate(character_id, path)
 
     async def skill_queue(self, character_id: str, limit: int = 50) -> dict[str, Any]:
         return await self._paged(character_id, f"characters/{character_id}/skillqueue/", limit)
@@ -115,11 +144,20 @@ class EsiCharacterEndpoints:
         filtered = [item for item in result["items"] if item.get("state") == state]
         return self._filtered(result, filtered, limit)
 
-    async def _get(self, character_id: str, path: str) -> EsiResponse:
+    async def _get(
+        self,
+        character_id: str,
+        path: str,
+        *,
+        fresh: bool = False,
+        bearer_auth: bool = False,
+    ) -> EsiResponse:
         return await self.client.get_response(
             path,
             character_id=character_id,
             access_token=await self.tokens.get_access_token(character_id),
+            use_cache=not fresh,
+            bearer_auth=bearer_auth,
         )
 
     async def _paged(self, character_id: str, base_path: str, limit: int) -> dict[str, Any]:
@@ -215,6 +253,16 @@ class FixtureCharacterEndpoints:
 
     async def skills(self, character_id: str) -> dict[str, Any]:
         return self._response(character_id, "skills")
+
+    async def fittings(
+        self, character_id: str, limit: int = 100, fresh: bool = False
+    ) -> dict[str, Any]:
+        del fresh
+        return self._bounded(character_id, "fittings", limit)
+
+    async def create_fitting(self, character_id: str, fitting: dict[str, Any]) -> Any:
+        del character_id, fitting
+        raise RuntimeError("fixture endpoint does not perform fitting mutations")
 
     async def skill_queue(self, character_id: str, limit: int = 50) -> dict[str, Any]:
         return self._bounded(character_id, "skill_queue", limit)

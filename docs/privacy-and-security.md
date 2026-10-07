@@ -1,6 +1,8 @@
 # Privacy and security
 
-`eve-mcp` is a local, read-only bridge to official EVE SSO/ESI data. It does
+`eve-mcp` is a local bridge to official EVE SSO/ESI data. Fitting reads and
+planning are read-only; the sole mutation is create-only saved-fitting
+creation. It does
 not inspect, monitor, modify, or control the EVE client. In particular, it does
 not use client memory, cache files, packets, screenshots/OCR, window inspection,
 mouse/keyboard input, or input broadcasting.
@@ -26,3 +28,10 @@ and metadata.
 ESI responses may be cached. Tool responses report data freshness, expiry, and
 truncation so MCP consumers do not mistake stale or partial data for live game
 state.
+
+The fitting creation ledger under `~/.local/share/eve-mcp/` stores only
+non-secret idempotency metadata (character ID, proposal hash, state, and
+verified fitting ID). It records uncertain outcomes so requests are reconciled
+by fresh read rather than automatically posting again. Static catalogs are
+replaceable public data stored separately from profiles and tokens. See
+[saved fittings](fittings.md) and [static-data status](static-data.md).

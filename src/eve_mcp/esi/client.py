@@ -47,7 +47,7 @@ class EsiClient:
             base_url="https://esi.evetech.net/latest/",
             transport=transport,
             timeout=httpx.Timeout(20.0),
-            headers={"User-Agent": "eve-mcp/0.1 (self-hosted read-only MCP)"},
+            headers={"User-Agent": "eve-mcp/0.1 (self-hosted MCP)"},
         )
         self.cache: dict[tuple[str | None, str], CacheEntry] = {}
 
@@ -58,10 +58,16 @@ class EsiClient:
         return (await self.get_response(path, character_id, access_token)).payload
 
     async def get_response(
-        self, path: str, character_id: str | None = None, access_token: str | None = None
+        self,
+        path: str,
+        character_id: str | None = None,
+        access_token: str | None = None,
+        *,
+        use_cache: bool = True,
+        bearer_auth: bool = False,
     ) -> EsiResponse:
         key = (character_id, path)
-        cached = self.cache.get(key)
+        cached = self.cache.get(key) if use_cache else None
         now = datetime.now(UTC)
         if cached and cached.expires_at > now:
             return EsiResponse(cached.payload, cached.expires_at, cached.total_pages)
@@ -70,6 +76,8 @@ class EsiClient:
             headers["If-None-Match"] = cached.etag
         if access_token:
             headers["Authorization"] = f"Bearer {access_token}"
+        if access_token and bearer_auth:
+            headers["Authorization"] = "Bearer " + access_token
         try:
             response = await self.client.get(path, headers=headers)
         except httpx.TimeoutException as error:
@@ -87,10 +95,47 @@ class EsiClient:
             raise EsiHttpError(f"ESI returned HTTP {response.status_code}; retry later.")
         expires_at = self._expiry(response, now)
         total_pages = self._page_count(response)
-        self.cache[key] = CacheEntry(
-            response.json(), response.headers.get("ETag"), expires_at, total_pages
-        )
-        return EsiResponse(response.json(), expires_at, total_pages)
+        payload = response.json()
+        if use_cache:
+            self.cache[key] = CacheEntry(
+                payload, response.headers.get("ETag"), expires_at, total_pages
+            )
+        return EsiResponse(payload, expires_at, total_pages)
+
+    async def post_fitting(
+        self, character_id: str, fitting: dict[str, Any], access_token: str
+    ) -> Any:
+        """Create one new saved fitting at the fixed character fitting endpoint."""
+        path = f"characters/{character_id}/fittings/"
+        try:
+            response = await self.client.post(
+                path,
+                json=fitting,
+                headers={"Authorization": "Bearer " + access_token},
+            )
+        except httpx.TimeoutException as error:
+            raise EsiError(
+                "Fitting creation outcome is unknown after a request timeout."
+            ) from error
+        except httpx.HTTPError as error:
+            raise EsiError(
+                "Fitting creation outcome is unknown after a transport failure."
+            ) from error
+        if response.status_code in {401, 403}:
+            raise EsiScopeError(
+                "ESI denied fitting creation. Reauthorize this character with the fitting "
+                "write scope."
+            )
+        if response.is_error:
+            raise EsiHttpError(f"ESI returned HTTP {response.status_code} for fitting creation.")
+        try:
+            return response.json()
+        except ValueError:
+            return None
+
+    def invalidate(self, character_id: str, path: str) -> None:
+        """Invalidate one character's exact cached ESI representation."""
+        self.cache.pop((character_id, path), None)
 
     @staticmethod
     def _page_count(response: httpx.Response) -> int | None:

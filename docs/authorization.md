@@ -13,9 +13,12 @@ Phase 2 mapping used here is: `GET /characters/{character_id}/blueprints/` →
 `esi-characters.read_blueprints.v1`; `GET /characters/{character_id}/wallet/transactions/`
 → `esi-wallet.read_character_wallet.v1`; and `GET /characters/{character_id}/orders/`
 → `esi-markets.read_character_orders.v1`. The Explorer was not reachable from
-the offline test environment on 2026-10-07, so no live endpoint or authorization
-request was made. The server requests only these confirmed read-only character
-scopes:
+the offline implementation environment on 2026-10-07, and network access was
+prohibited for the fitting work, so no live endpoint or authorization request
+was made. In addition to the existing read scopes, the fitting feature
+requests the plan-specified fitting scopes below; independently verify those
+current upstream contracts before authorizing a character. No corporation or
+fleet scopes are requested.
 
 ```text
 esi-skills.read_skills.v1
@@ -26,15 +29,21 @@ esi-industry.read_character_mining.v1
 esi-characters.read_blueprints.v1
 esi-wallet.read_character_wallet.v1
 esi-markets.read_character_orders.v1
+esi-fittings.read_fittings.v1
+esi-fittings.write_fittings.v1
 ```
 
-No corporation scopes are requested.
+`esi-fittings.write_fittings.v1` authorizes saved-fitting creation through the
+single explicitly create-only `eve_create_fitting` MCP tool. The tool never
+updates or deletes existing fittings, and it does not change the active ship or
+assets. The exact boundary and unverified-live-contract status are documented
+in [saved fittings](fittings.md).
 
 ## Existing profiles must be reauthorized
 
 A previously authorized profile only retains the scopes approved at its last
 consent. To use Phase 2 tools, explicitly run `eve-mcp auth add` and complete CCP
-consent again for **each** existing character. The normal per-character
+consent again for **each** intended character. The normal per-character
 reauthorization updates only that character profile and keyring refresh token.
 MCP tools return an actionable ESI missing-scope/authentication error and never
 start a browser, register an application, or reauthorize automatically.

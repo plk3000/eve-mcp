@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "eve-mcp"
 version = "0.1.0"
-description = "Standalone, read-only multi-character EVE Online MCP server"
+description = "EVE Online MCP with read-only data and create-only saved fittings"
 readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "MIT"}

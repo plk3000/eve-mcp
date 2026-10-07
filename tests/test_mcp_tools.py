@@ -32,4 +32,9 @@ def test_server_has_selected_v1_tools() -> None:
         "eve_get_assets",
         "eve_get_mining_ledger",
         "eve_get_industry_jobs",
+        "eve_get_fittings",
+        "eve_search_fitting_types",
+        "eve_get_fitting_context",
+        "eve_validate_fitting",
+        "eve_create_fitting",
     } <= names

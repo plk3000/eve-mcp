@@ -7,6 +7,7 @@ def test_project_is_standalone_and_defaults_to_stdio() -> None:
     root = Path(__file__).parents[1]
     pyproject = (root / "pyproject.toml").read_text()
     assert "eve-mining-support" not in pyproject
+    assert "create-only saved fittings" in pyproject
 
     from eve_mcp.config import Settings
 

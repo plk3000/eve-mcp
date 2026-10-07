@@ -3,16 +3,19 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from eve_mcp.auth.sso import RefreshingAccessTokenProvider
 from eve_mcp.auth.token_store import KeyringTokenStore
 from eve_mcp.config import Settings
 from eve_mcp.esi.client import EsiClient
 from eve_mcp.esi.endpoints import EsiCharacterEndpoints
+from eve_mcp.fittings.creation_ledger import CreationLedger
+from eve_mcp.fittings.writer import FittingWriter
 from eve_mcp.mcp.character_tools import CharacterEndpoints, CharacterTools
 from eve_mcp.mcp.profile_tools import ProfileTools
 from eve_mcp.profiles import ProfileRepository
+from eve_mcp.static_data.refresh import StaticDataManager
 
 
 def build_server(
@@ -30,11 +33,24 @@ def build_server(
         )
     else:
         endpoint_service = endpoints
-    characters = CharacterTools(profiles, endpoint_service)
+
+    def catalog_provider() -> Any:
+        return StaticDataManager(settings.data_dir).catalog()
+
+    fitting_writer = FittingWriter(
+        profiles,
+        endpoint_service,
+        lambda version: StaticDataManager(settings.data_dir).catalog(version),
+        CreationLedger(settings.data_dir / "fitting-creations.sqlite3"),
+    )
+    characters = CharacterTools(profiles, endpoint_service, catalog_provider, fitting_writer)
     profile_tools = ProfileTools(profiles)
     server = FastMCP(
         "eve-mcp",
-        instructions="Read-only EVE ESI data. Every data tool requires an explicit character.",
+        instructions=(
+            "EVE ESI data tools require an explicit character. The only fitting mutation "
+            "creates a new saved fitting; it never updates or deletes."
+        ),
     )
 
     @server.tool()
@@ -56,6 +72,51 @@ def build_server(
     @server.tool()
     async def eve_get_skills(character: str) -> dict[str, Any]:
         return await characters.skills(character)
+
+    @server.tool()
+    async def eve_get_fittings(
+        character: str, ship_type_id: int | None = None, limit: int = 100
+    ) -> dict[str, Any]:
+        """Return bounded saved fittings for the explicit character; this is not an active fit."""
+        return await characters.fittings(character, ship_type_id, limit)
+
+    @server.tool()
+    def eve_search_fitting_types(
+        query: str, kind: str | None = None, limit: int = 20
+    ) -> dict[str, Any]:
+        """Search bounded fitting names in the installed offline catalog."""
+        return characters.search_fitting_types(query, kind, limit)
+
+    @server.tool()
+    async def eve_get_fitting_context(
+        character: str, hull_type_id: int | None = None
+    ) -> dict[str, Any]:
+        """Return selected-character skills and optional catalog hull facts."""
+        return await characters.fitting_context(character, hull_type_id)
+
+    @server.tool()
+    async def eve_validate_fitting(
+        character: str,
+        fitting: dict[str, Any],
+        include_asset_check: bool = True,
+    ) -> dict[str, Any]:
+        """Validate a proposed payload; validation does not save, buy, or fit anything."""
+        return await characters.validate_fitting(character, fitting, include_asset_check)
+
+    @server.tool()
+    async def eve_create_fitting(
+        character: str,
+        proposal: dict[str, Any],
+        proposal_id: str,
+        confirm_create: Literal[True],
+    ) -> dict[str, Any]:
+        """Creates one new saved fitting for the selected character; never updates or deletes.
+
+        Call only after direct operator intent to save the reviewed exact proposal. Requires
+        the canonical proposal ID, matching selected character, installed catalog, scopes,
+        literal confirmation, conflict preflight, and successful fresh readback.
+        """
+        return await characters.create_fitting(character, proposal, proposal_id, confirm_create)
 
     @server.tool()
     async def eve_get_skill_queue(character: str, limit: int = 50) -> dict[str, Any]:
